@@ -1,64 +1,78 @@
-import streamlit as st
-import pandas as pd
+import os
 import pickle
+import joblib
+import numpy as np
+import pandas as pd
+import streamlit as st
 
-# Set page title
-st.set_page_config(page_title="Calorie Burn Predictor", page_icon="🔥", layout="centered")
+# Set page title and layout
+st.set_page_config(
+    page_title="Calorie Burn Predictor",
+    page_icon="🔥",
+    layout="centered"
+)
 
-# Main Title
-st.title("🔥 Calorie Burn Prediction System")
-st.write("Enter your exercise details below to estimate calories burned.")
-st.markdown("---")
+# Title and description
+st.title("🔥 Calorie Burn Predictor")
+st.write(
+    "Estimate the number of calories burned during your workout based on your personal metrics and activity data."
+)
 
-# 1. Load the pre-trained Machine Learning model
+# Function to load the model (cached for performance)
 @st.cache_resource
-def load_model():
-    with open("calorie_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    return model
+def load_trained_model():
+    # Looks for the new joblib file first!
+    if os.path.exists("calorie_model.joblib"):
+        return joblib.load("calorie_model.joblib")
+    elif os.path.exists("calorie_model.pkl.gz"):
+        import gzip
+        with gzip.open("calorie_model.pkl.gz", "rb") as f:
+            return pickle.load(f)
+    elif os.path.exists("calorie_model.pkl"):
+        with open("calorie_model.pkl", "rb") as f:
+            return pickle.load(f)
+    else:
+        return None
 
-try:
-    model = load_model()
-except FileNotFoundError:
-    st.error("Error: 'calorie_model.pkl' not found! Please run 'train_model.py' first.")
-    st.stop()
+model = load_trained_model()
 
-# 2. Main Page Input Form
-st.subheader("📋 Enter Workout Details")
+# Sidebar for User Inputs
+st.sidebar.header("📊 Input User Parameters")
 
-col1, col2 = st.columns(2)
+gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
+age = st.sidebar.slider("Age (years)", min_value=10, max_value=90, value=25)
+height = st.sidebar.slider("Height (cm)", min_value=100, max_value=220, value=170)
+weight = st.sidebar.slider("Weight (kg)", min_value=30, max_value=150, value=70)
+duration = st.sidebar.slider("Workout Duration (minutes)", min_value=1, max_value=180, value=30)
+heart_rate = st.sidebar.slider("Average Heart Rate (bpm)", min_value=60, max_value=200, value=110)
+body_temp = st.sidebar.slider("Body Temperature (°C)", min_value=36.0, max_value=42.0, value=38.5, step=0.1)
 
+# Encode gender to numeric (Male = 0, Female = 1)
+gender_encoded = 0 if gender == "Male" else 1
+
+# Display entered parameters on main screen
+st.subheader("Your Workout Profile")
+col1, col2, col3 = st.columns(3)
 with col1:
-    gender_choice = st.selectbox("Gender", ("Male", "Female"))
-    gender = 0 if gender_choice == "Male" else 1
-    
-    age = st.number_input("Age (years)", min_value=10, max_value=80, value=25)
-    height = st.number_input("Height (cm)", min_value=120.0, max_value=220.0, value=170.0)
-    weight = st.number_input("Weight (kg)", min_value=30.0, max_value=150.0, value=70.0)
-
+    st.metric(label="Duration", value=f"{duration} min")
+    st.metric(label="Gender", value=gender)
 with col2:
-    duration = st.number_input("Duration (minutes)", min_value=1.0, max_value=120.0, value=30.0)
-    heart_rate = st.number_input("Heart Rate (bpm)", min_value=60.0, max_value=180.0, value=105.0)
-    body_temp = st.number_input("Body Temp (°C)", min_value=36.0, max_value=42.0, value=40.0)
+    st.metric(label="Avg Heart Rate", value=f"{heart_rate} bpm")
+    st.metric(label="Age / Weight", value=f"{age} yrs / {weight} kg")
+with col3:
+    st.metric(label="Body Temp", value=f"{body_temp} °C")
+    st.metric(label="Height", value=f"{height} cm")
 
 st.markdown("---")
 
-# 3. Predict Button & Output
-if st.button("🚀 Predict Calories Burned", use_container_width=True):
-    # Prepare input data array
-    input_data = pd.DataFrame({
-        'Gender': [gender],
-        'Age': [age],
-        'Height': [height],
-        'Weight': [weight],
-        'Duration': [duration],
-        'Heart_Rate': [heart_rate],
-        'Body_Temp': [body_temp]
-    })
-
-    # Predict using trained model
-    prediction = model.predict(input_data)
-    calories = round(prediction[0], 2)
-
-    # Display result
-    st.success(f"**Estimated Calories Burned:** {calories} kcal")
+# Prediction section
+if st.button("🔥 Calculate Calories Burned", use_container_width=True):
+    if model is None:
+        st.error(
+            "Model file not found! Please ensure `calorie_model.joblib` is uploaded to your GitHub repository."
+        )
+    else:
+        features = np.array([[gender_encoded, age, height, weight, duration, heart_rate, body_temp]])
+        prediction = model.predict(features)[0]
+        st.success(f"### Estimated Calories Burned: **{prediction:.2f} kcal**")
+        st.balloons()
